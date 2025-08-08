@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rubik's Cube Solver</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to right, #1f1c2c, #928dab);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 2rem;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    #video-container, #manual-input {
+      margin: 1rem 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    #cube-preview {
+      margin-top: 2rem;
+      width: 600px;
+      height: 600px;
+      background-color: #000;
+      border-radius: 1rem;
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+    }
+
+    button, select {
+      padding: 0.6rem 1.2rem;
+      background-color: #00c6ff;
+      border: none;
+      color: white;
+      font-weight: bold;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover, select:hover {
+      background-color: #0072ff;
+    }
+
+    .face-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 40px);
+      grid-template-rows: repeat(3, 40px);
+      gap: 5px;
+    }
+
+    .color-cell {
+      width: 40px;
+      height: 40px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .face-label {
+      margin: 1rem 0 0.3rem;
+      font-weight: bold;
+    }
+
+    #solve-btn {
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Rubik's Cube Solver</h1>
+
+  <div id="manual-input">
+    <div id="color-picker"></div>
+    <button onclick="submitManualColors()">Submit Manual Colors</button>
+  </div>
+
+  <button id="solve-btn" onclick="solveCube()">Solve Cube</button>
+
+  <div id="cube-preview"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"><
+  </script>
+<script>
+    const COLORS = ['W', 'R', 'B', 'O', 'G', 'Y'];
+    const FACE_NAMES = ['U', 'R', 'F', 'D', 'L', 'B'];
+    const COLOR_MAP = {
+      'W': 'white',
+      'R': 'red',
+      'B': 'blue',
+      'O': 'orange',
+      'G': 'green',
+      'Y': 'yellow'
+    };
+
+    let cubeState = {};
+
+    const picker = document.getElementById('color-picker');
+    FACE_NAMES.forEach(face => {
+      const label = document.createElement('div');
+      label.className = 'face-label';
+      label.textContent = `Face ${face}`;
+      picker.appendChild(label);
+
+      const grid = document.createElement('div');
+      grid.className = 'face-grid';
+      grid.id = `grid-${face}`;
+      picker.appendChild(grid);
+
+      for (let i = 0; i < 9; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'color-cell';
+        cell.dataset.face = face;
+        cell.dataset.index = i;
+        cell.onclick = () => selectColor(cell);
+        grid.appendChild(cell);
+      }
+    });
+
+    function selectColor(cell) {
+      const current = cell.style.backgroundColor;
+      const nextColor = COLORS[(COLORS.indexOf(getColorKey(current)) + 1) % COLORS.length];
+      cell.style.backgroundColor = COLOR_MAP[nextColor];
+      cell.dataset.color = nextColor;
+    }
+
+    function getColorKey(cssColor) {
+      for (let key in COLOR_MAP) {
+        if (COLOR_MAP[key] === cssColor) return key;
+      }
+      return 'W';
+    }
+
+    function submitManualColors() {
+      cubeState = {};
+      FACE_NAMES.forEach(face => {
+        const grid = document.getElementById(`grid-${face}`);
+        cubeState[face] = Array.from(grid.children).map(cell => cell.dataset.color || 'W');
+      });
+      alert('Manual colors submitted. Now click Solve.');
+    }
+
+    function solveCube() {
+      fetch('http://localhost:5000/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cube_state: cubeState })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.moves) animateSolution(data.moves);
+          else alert('Solving failed');
+        })
+        .catch(err => alert('Backend error'));
+    }
+
+   function animateSolution(moves) {
+  const container = document.getElementById('cube-preview');
+  container.innerHTML = '';
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize(container.offsetWidth, container.offsetHeight);
+  container.appendChild(renderer.domElement);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  camera.position.set(5, 5, 5);
+  controls.update();
+
+  const cubelets = [];
+  for (let x = -1; x <= 1; x++) {
+    for (let y = -1; y <= 1; y++) {
+      for (let z = -1; z <= 1; z++) {
+        const geo = new THREE.BoxGeometry(0.95, 0.95, 0.95);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(x, y, z);
+        mesh.userData = { x, y, z }; // save original positions
+        cubelets.push(mesh);
+        scene.add(mesh);
+      }
+    }
+  }
+
+  const light = new THREE.PointLight(0xffffff, 1);
+  light.position.set(5, 5, 5);
+  scene.add(light);
+
+  let moveIndex = 0;
+
+  function getLayer(move) {
+    // identify which cubelets to rotate
+    let layerCondition;
+    let axis, angle;
+
+    const clockwise = !move.includes("'"); // normal vs counter-clockwise
+    const baseMove = move.replace("'", "").replace("2", "");
+    const double = move.includes("2");
+
+    switch (baseMove) {
+      case 'U':
+        layerCondition = c => c.userData.y === 1;
+        axis = new THREE.Vector3(0, 1, 0);
+        break;
+      case 'D':
+        layerCondition = c => c.userData.y === -1;
+        axis = new THREE.Vector3(0, -1, 0);
+        break;
+      case 'R':
+        layerCondition = c => c.userData.x === 1;
+        axis = new THREE.Vector3(1, 0, 0);
+        break;
+      case 'L':
+        layerCondition = c => c.userData.x === -1;
+        axis = new THREE.Vector3(-1, 0, 0);
+        break;
+      case 'F':
+        layerCondition = c => c.userData.z === 1;
+        axis = new THREE.Vector3(0, 0, 1);
+        break;
+      case 'B':
+        layerCondition = c => c.userData.z === -1;
+        axis = new THREE.Vector3(0, 0, -1);
+        break;
+      default:
+        return { group: null };
+    }
+
+    const group = new THREE.Group();
+    cubelets.forEach(c => {
+      if (layerCondition(c)) {
+        scene.remove(c);
+        group.add(c);
+      }
+    });
+
+    scene.add(group);
+
+    // Determine rotation angle
+    angle = Math.PI / 2 * (clockwise ? -1 : 1);
+    if (double) angle *= 2;
+
+    return { group, axis, angle };
+  }
+
+  function performMove(move) {
+    const { group, axis, angle } = getLayer(move);
+    if (!group) return;
+
+    const steps = 20;
+    let step = 0;
+
+    function rotateStep() {
+      if (step < steps) {
+        group.rotateOnAxis(axis, angle / steps);
+        step++;
+        requestAnimationFrame(rotateStep);
+      } else {
+        // detach cubelets from group and restore them to scene
+        group.children.forEach(c => {
+          group.remove(c);
+          scene.add(c);
+          // update userData position based on rotation
+          const pos = new THREE.Vector3(c.position.x, c.position.y, c.position.z).applyAxisAngle(axis, angle);
+          c.userData.x = Math.round(pos.x);
+          c.userData.y = Math.round(pos.y);
+          c.userData.z = Math.round(pos.z);
+        });
+        scene.remove(group);
+        moveIndex++;
+        if (moveIndex < moves.length) {
+          setTimeout(() => performMove(moves[moveIndex]), 300);
+        }
+      }
+    }
+
+    rotateStep();
+  }
+
+  // Start first move
+  if (moves.length > 0) performMove(moves[0]);
+
+  // Continuous render loop
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+  </script>
+</body>
+</html>
